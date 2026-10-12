@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const use_agents = false;
+pub const use_agents = true;
 const population = @import("population_padded.zig");
 const economy = @import("economy.zig");
 const resources = @import("resources.zig");
@@ -45,7 +45,8 @@ pub fn main() !void {
     var pol = PollutionEngine.init();
     var agr = AgricultureEngine.init();
     var fin = FinanceEngine.init();
-    var agent_sys = agents.AgentSystem.init();
+    var agent_sys = try agents.AgentSystem.initHeap();
+    defer std.heap.page_allocator.destroy(agent_sys);
 
     // DICE Climate State
     var atmospheric_carbon_gtc: f64 = calib.atmospheric_carbon_gtc;
@@ -82,7 +83,7 @@ pub fn main() !void {
     const base_mort_f = [_]f64{0.01} ** 104;
 
     // Benchmark configuration: 10,000 full 103-year simulations (1,030,000 steps)
-    const num_simulations: usize = 10_000;
+    const num_simulations: usize = 1;
     const years_per_sim: usize = 103;
 
     try stdout.print("Simulating {d} runs of {d}-year unified 5-sector simulations...\n", .{ num_simulations, years_per_sim });
@@ -105,7 +106,7 @@ pub fn main() !void {
         pol = PollutionEngine.init();
         agr = AgricultureEngine.init();
         fin = FinanceEngine.init();
-        agent_sys = agents.AgentSystem.init();
+        agent_sys.reset();
         atmospheric_carbon_gtc = calib.atmospheric_carbon_gtc;
         temperature_anomaly = calib.temperature_anomaly;
 

@@ -45,7 +45,8 @@ pub fn runSimulation(prng: *std.rand.Random) SimResult {
     var fin = FinanceEngine.init();
     
     // Initialize agents
-    var agent_sys = agents.AgentSystem.init();
+    var agent_sys = agents.AgentSystem.initHeap() catch unreachable;
+    defer std.heap.page_allocator.destroy(agent_sys);
     
     // Monte Carlo: slightly perturb initial agent vulnerabilities by +/- 10%
     // This creates a lasting impact throughout the simulation.

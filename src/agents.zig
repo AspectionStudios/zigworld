@@ -1,8 +1,10 @@
 const std = @import("std");
 
-pub const NUM_HOUSEHOLDS = 10_000;
+pub const NUM_HOUSEHOLDS = 10_000_000;
 const V_LEN = 16;
 const Vec = @Vector(V_LEN, f32);
+
+extern "C" fn run_agents_metal(x_pos: [*]f32, y_pos: [*]f32, vuln: [*]f32, temp_anomaly: f32, count: i32) void;
 
 pub const AgentSystem = struct {
     age: [NUM_HOUSEHOLDS]f32 align(64),
@@ -13,7 +15,36 @@ pub const AgentSystem = struct {
     x_pos: [NUM_HOUSEHOLDS]f32 align(64),
     y_pos: [NUM_HOUSEHOLDS]f32 align(64),
 
+    pub fn initHeap() !*AgentSystem {
+        var system = try std.heap.page_allocator.create(AgentSystem);
+        system.reset();
+        return system;
+    }
+
     pub fn init() AgentSystem {
+        var system: AgentSystem = undefined;
+        system.reset();
+        return system;
+    }
+
+    pub fn reset(self: *@This()) void {
+        @memset(&self.age, 30.0);
+        @memset(&self.employed, 1.0);
+        @memset(&self.energy_consumed, 0.0);
+        @memset(&self.savings, 100.0);
+        @memset(&self.vulnerability, 0.0);
+        @memset(&self.x_pos, 0.0);
+        @memset(&self.y_pos, 0.0);
+        
+        for (0..NUM_HOUSEHOLDS) |i| {
+            self.vulnerability[i] = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(NUM_HOUSEHOLDS));
+            self.age[i] = @as(f32, @floatFromInt(i % 80)) + 18.0;
+            self.x_pos[i] = @as(f32, @floatFromInt(i % 100));
+            self.y_pos[i] = @as(f32, @floatFromInt((i / 100) % 100));
+        }
+    }
+
+    pub fn OLD_init() AgentSystem {
         var system = AgentSystem{
             .age = [_]f32{30.0} ** NUM_HOUSEHOLDS,
             .employed = [_]f32{1.0} ** NUM_HOUSEHOLDS,
@@ -43,16 +74,14 @@ pub const AgentSystem = struct {
         const savings_sub: Vec = @splat(5.0);
         const zero: Vec = @splat(0.0);
         const one: Vec = @splat(1.0);
-        const neg_one: Vec = @splat(-1.0);
-        const old_age: Vec = @splat(100.0);
+                const old_age: Vec = @splat(100.0);
         const reset_age: Vec = @splat(18.0);
         const half: Vec = @splat(0.5);
         
         const fifty: Vec = @splat(50.0);
-        const hundred: Vec = @splat(100.0);
-        const mig_rate: Vec = @splat(2.0); // Migration speed multiplier
-        const temp_vul_weight: Vec = @splat(0.1); // Weight of temperature on vulnerability
+                        const temp_vul_weight: Vec = @splat(0.1); // Weight of temperature on vulnerability
 
+        run_agents_metal(@ptrCast(&self.x_pos), @ptrCast(&self.y_pos), @ptrCast(&self.vulnerability), @as(f32, @floatCast(temperature_anomaly)), NUM_HOUSEHOLDS);
         var total_energy_sum: f64 = 0.0;
         var total_savings_sum: f64 = 0.0;
 
@@ -62,7 +91,7 @@ pub const AgentSystem = struct {
             const vul: Vec = self.vulnerability[i..][0..V_LEN].*;
             var age_vec: Vec = self.age[i..][0..V_LEN].*;
             var sav_vec: Vec = self.savings[i..][0..V_LEN].*;
-            var y_vec: Vec = self.y_pos[i..][0..V_LEN].*;
+            const y_vec: Vec = self.y_pos[i..][0..V_LEN].*;
 
             // Climate Zone calculation (0=pole, 50=equator, 100=pole)
             const y_gt_50 = y_vec > fifty;
@@ -80,21 +109,6 @@ pub const AgentSystem = struct {
             const emp_f32: Vec = @select(f32, is_employed_bool, one, zero);
             const unemp_f32: Vec = one - emp_f32;
             self.employed[i..][0..V_LEN].* = emp_f32;
-            
-            // Migration logic: Unemployed agents in damaged zones migrate towards poles
-            const migration_step = unemp_f32 * local_temp * mig_rate;
-            const direction = @select(f32, y_gt_50, one, neg_one);
-            
-            y_vec = y_vec + (direction * migration_step);
-            y_vec = @max(zero, @min(hundred, y_vec));
-            self.y_pos[i..][0..V_LEN].* = y_vec;
-
-            // X-axis migration logic: Drift based on vulnerability to spread agents out
-            var x_vec: Vec = self.x_pos[i..][0..V_LEN].*;
-            const x_drift = (vul - half) * mig_rate * unemp_f32;
-            x_vec = x_vec + x_drift;
-            x_vec = @max(zero, @min(hundred, x_vec));
-            self.x_pos[i..][0..V_LEN].* = x_vec;
 
             // Energy consumed
             const e_cons = (emp_f32 * emp_e) + (unemp_f32 * unemp_e);
