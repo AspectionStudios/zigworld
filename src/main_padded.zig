@@ -1,4 +1,5 @@
 const std = @import("std");
+pub const use_agents = false;
 const population = @import("population_padded.zig");
 const economy = @import("economy.zig");
 const resources = @import("resources.zig");
@@ -134,15 +135,14 @@ pub fn main() !void {
 
             // STEP 0.5: Micro-Agents (Mesa/ECS individual households) Step
             const base_e_per_capita = total_energy / @max(1.0, total_pop);
-            const agent_results = agent_sys.step(u_mult, base_e_per_capita, temperature_anomaly);
+            if (use_agents) {
+                const agent_results = agent_sys.step(u_mult, base_e_per_capita, temperature_anomaly);
+                const pop_scaling = total_pop / @as(f64, @floatFromInt(agents.NUM_HOUSEHOLDS));
+                total_energy = agent_results.total_energy * pop_scaling;
+                const total_savings_trillions = (agent_results.total_savings * pop_scaling) / 1_000_000_000_000.0;
+                econ.state.industrial_capital += total_savings_trillions * 0.10;
+            }
 
-            // Override macro total_energy with the bottom-up micro-agent aggregate
-            const pop_scaling = total_pop / @as(f64, @floatFromInt(agents.NUM_HOUSEHOLDS));
-            total_energy = agent_results.total_energy * pop_scaling;
-
-            // Re-inject agent savings into the macro economy (boosting industrial capital)
-            const total_savings_trillions = (agent_results.total_savings * pop_scaling) / 1_000_000_000_000.0;
-            econ.state.industrial_capital += total_savings_trillions * 0.10;
 
             // STEP 1.5: DICE Climate Optimiser (MESSAGEix Energy Mix)
             // Energy Mix: 80% Fossil Fuels, 20% Renewables (can be made dynamic)
@@ -167,7 +167,7 @@ pub fn main() !void {
             const effective_ic = econ.state.industrial_capital * (1.0 - rsc.state.fcaor);
             const industrial_output = (@max(0.0, effective_ic) * 0.13184) * (total_labor / 1_000_000_000.0);
             const services_output = (econ.state.service_capital * 0.22111) * (total_labor / 1_000_000_000.0);
-            const iopc = industrial_output / @max(1.0, total_pop);
+            const iopc = (industrial_output * 1_000_000_000_000.0) / @max(1.0, total_pop);
 
             last_econ_state = .{
                 .industrial_output = industrial_output,

@@ -26,14 +26,43 @@ def fetch_data():
     except Exception as e:
         print(f"API fetch failed: {e}. Falling back to default structural values.")
 
-    per_cohort = (pop / 2.0) / 104.0
-    data["init_m"] = [per_cohort] * 104
-    data["init_f"] = [per_cohort] * 104
+    # Mathematical approximation of 2025 Global Age Pyramid
+    init_m = []
+    init_f = []
+    total_weights = 0.0
+    weights = []
+    for age in range(104):
+        # Piecewise/smooth curve approximating world demographics
+        if age < 20:
+            # Slight bulge from births, gently increasing
+            w = 1.0 + (age * 0.01)
+        elif age < 50:
+            # Peak working age population
+            w = 1.2 - ((age - 20) * 0.005)
+        elif age < 75:
+            # Aging demographic, steady decline
+            w = 1.05 - ((age - 50) * 0.02)
+        else:
+            # Exponential decay in old age
+            w = 0.55 * math.exp(-0.15 * (age - 75))
+            
+        w = max(0.001, w)
+        weights.append(w)
+        total_weights += w
+
+    for age in range(104):
+        # 50.4% Male, 49.6% Female globally
+        cohort_pop = pop * (weights[age] / total_weights)
+        init_m.append(cohort_pop * 0.504)
+        init_f.append(cohort_pop * 0.496)
+
+    data["init_m"] = init_m
+    data["init_f"] = init_f
 
     # Calculate effective labor using the Zig gaussian curve
     total_labor = 0.0
     for age in range(104):
-        cohort_pop = per_cohort * 2.0
+        cohort_pop = init_m[age] + init_f[age]
         participation = 0.0
         if 18 <= age <= 75:
             z = (age - 45.0) / 12.0
@@ -59,7 +88,6 @@ def fetch_data():
     except Exception as e:
         print(f"API fetch failed: {e}. Falling back to default structural values.")
 
-    # Save to src/calibration.zig to satisfy zero heap allocation constraint
     output_path = "src/calibration.zig"
     
     def to_zig_array(arr):
